@@ -1,21 +1,42 @@
+import passport from 'passport';
+import passportLocal from 'passport-local';
 import bcrypt from 'bcryptjs';
-import User from '../models/userModel'; // Ensure this path is correct based on your project structure
+import mongoose from 'mongoose';
+import { Request, Response, NextFunction } from 'express';
 
-export const registerUser = async (username: string, password: string) => {
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = new User({ username, password: hashedPassword });
-  await user.save();
-  return user;
-};
+const LocalStrategy = passportLocal.Strategy;
+const User = mongoose.model('User'); // Assuming a User model exists
 
-export const authenticateUser = async (username: string, password: string) => {
-  const user = await User.findOne({ username });
-  if (!user) {
-    throw new Error('User not found');
+passport.use(
+  new LocalStrategy(async (username, password, done) => {
+    try {
+      const user = await User.findOne({ username });
+      if (!user) return done(null, false, { message: 'Incorrect username.' });
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) return done(null, false, { message: 'Incorrect password.' });
+
+      return done(null, user);
+    } catch (err) {
+      return done(err);
+    }
+  })
+);
+
+passport.serializeUser((user, done) => {
+  done(null, (user as any).id);
+});
+
+passport.deserializeUser(async (id, done) => {
+  try {
+    const user = await User.findById(id);
+    done(null, user);
+  } catch (err) {
+    done(err);
   }
-  const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) {
-    throw new Error('Invalid password');
-  }
-  return user;
+});
+
+export const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+  if (req.isAuthenticated()) return next();
+  res.status(401).send('Unauthorized');
 };
